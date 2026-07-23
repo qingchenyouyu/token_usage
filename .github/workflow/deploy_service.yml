@@ -1,83 +1,56 @@
-name: Service Alibaba Cloud build image
+name: Build and Deploy Check Usage CronJob
 
 on:
   push:
     branches:
-      - main
+      - vcn
   workflow_dispatch:
     inputs:
       branch:
         description: '选择要构建的分支'
         required: true
-        default: 'main'
+        default: 'vcn'
         type: choice
         options:
-          - main
-        
+          - vcn
 
 env:
-  IMAGE_NAME: appliance-solution-server/token-usage   # 可根据实际情况修改
+  IMAGE_NAME: appliance-solution-server/token-usage   # ACR 中的镜像名（不含仓库地址）
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. 检出代码
+      # 1. 检出代码（支持手动输入分支）
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
-      # 2. 设置 JDK 8 环境
-      - name: Set up JDK 8
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin' # 使用 AdoptOpenJDK 的 Temurin 发行版
-          java-version: '8' # 设置 Java 版本为 8
-
-      # 3. 构建 Java 项目（使用 Maven），并确保生成的 JAR 为 APP.jar
-      - name: Build with Maven
-        run: |
-          mvn clean package --file pom.xml
-          # 查找生成的 JAR 文件，并重命名为 APP.jar
-          JAR_FILE=$(ls target/*.jar | grep -v original-name-pattern) # 根据实际情况调整过滤条件
-          cp "$JAR_FILE" APP.jar
-
-
-      # 5. 检查 Docker 登录凭证（保持原样）
-      - name: Check Docker login secrets
-        run: |
-          if [ -z "${{ secrets.ALICLOUD_ACR_REPO }}" ] || \
-             [ -z "${{ secrets.ALICLOUD_ACR_USER }}" ] || \
-             [ -z "${{ secrets.ALICLOUD_ACR_PASSWORD }}" ]; then
-            echo "ERROR: One of the Docker login secrets is missing!"
-            exit 1
-          fi
-
-      # 6. 登录阿里云 ACR
+      # 2. 登录阿里云 ACR
       - name: Login to Alibaba Cloud ACR
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.ALICLOUD_ACR_REPO }}
           username: ${{ secrets.ALICLOUD_ACR_USER }}
           password: ${{ secrets.ALICLOUD_ACR_PASSWORD }}
+        # 如果secrets缺失，action会自动失败，无需额外检查
 
-      # 7. 生成镜像标签（基于提交 SHA）
+      # 3. 生成镜像标签（使用短 commit SHA）
       - name: Set image tag
         id: image_tag
         run: |
-          TAG=$(git rev-parse --short=6 ${{ github.event.inputs.branch }})
+          TAG=$(git rev-parse --short=6 HEAD)
           echo "TAG=$TAG" >> $GITHUB_ENV
 
-      # 8. 构建 Docker 镜像
+      # 4. 构建 Docker 镜像（使用项目根目录的 Dockerfile）
       - name: Build Docker image
         run: |
-          docker build -f Dockerfile -t ${{ secrets.ALICLOUD_ACR_REPO }}/${{ env.IMAGE_NAME }}:${{ env.TAG }} .
+          docker build -t ${{ secrets.ALICLOUD_ACR_REPO }}/${{ env.IMAGE_NAME }}:${{ env.TAG }} .
           docker tag ${{ secrets.ALICLOUD_ACR_REPO }}/${{ env.IMAGE_NAME }}:${{ env.TAG }} \
                      ${{ secrets.ALICLOUD_ACR_REPO }}/${{ env.IMAGE_NAME }}:latest
 
-      # 9. 推送镜像
+      # 5. 推送镜像到 ACR
       - name: Push Docker images
         run: |
           docker push ${{ secrets.ALICLOUD_ACR_REPO }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
