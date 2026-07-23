@@ -1,4 +1,4 @@
-name: Build and Deploy Check Usage CronJob
+name: UAT Build and Deploy Check Usage CronJob
 
 on:
   push:
