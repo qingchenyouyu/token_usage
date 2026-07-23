@@ -15,14 +15,5 @@ ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 创建工作目录
-WORKDIR /data/workspace
+WORKDIR /root
 
-# 复制脚本和配置文件
-COPY check_usage.sh .
-COPY .my.cnf /root/.my.cnf
-
-# 赋予执行权限
-RUN chmod +x check_usage.sh && chmod 600 /root/.my.cnf
-
-# 默认执行脚本（CronJob 可通过 command 覆盖）
-ENTRYPOINT ["/bin/sh", "/data/workspace/check_usage.sh"]
